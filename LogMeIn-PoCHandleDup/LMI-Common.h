@@ -3,12 +3,14 @@
 #include <Windows.h>
 #include <winternl.h>
 #include <stdio.h>
+#include <TlHelp32.h>
 #pragma comment(lib, "ntdll")
 
 
 #define IOCTL_DUPE_LEL 0x9211001C
 #define SystemHandleInformation 16
 #define OBJECT_TYPE_PROCESS 7
+#define ProcessHandleCount 0x14
 
 typedef struct LMI_INFO {
 	DWORD64 qwPid;
@@ -36,6 +38,12 @@ typedef struct _SYSTEM_HANDLE_INFORMATION
 	SYSTEM_HANDLE_TABLE_ENTRY_INFO Handles[1];
 } SYSTEM_HANDLE_INFORMATION, * PSYSTEM_HANDLE_INFORMATION;
 
+typedef struct SHITTY_THREAD_INFO {
+	BOOL bStart;
+	DWORD64 hBegin;
+	HANDLE hTarget;
+}SHITTY_THREAD_INFO, *PSHITTY_THREAD_INFO;
+
 static_assert(sizeof(LMI_INFO) == 0x20, "must be 0x20 bytes");
 
 typedef NTSTATUS(WINAPI* lpNtQueryInformationProcess)(HANDLE, ULONG, PVOID, ULONG, PULONG);
@@ -55,4 +63,5 @@ static const char* g_strTargetProcName = "LMIGuardianService.exe";
 static const SIZE_T g_strLenTargetProc = strlen(g_strTargetProcName);
 
 std::vector<HANDLE> QuerySystemHandlesForObjectTypeAndAccess(DWORD dwObjectType, DWORD dwAccessMask);
-HANDLE HandleSearchThread(DWORD64 hBegin, DWORD dwAccessMask);
+VOID HandleSearchThread(LPVOID lpParam);
+HANDLE FindNextCreatedHandle();
