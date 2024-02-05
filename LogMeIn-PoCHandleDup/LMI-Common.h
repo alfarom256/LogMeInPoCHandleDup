@@ -7,6 +7,7 @@
 #pragma comment(lib, "ntdll")
 
 #define OBJECT_TYPE_THREAD_TOKEN 5
+#define OBJECT_TYPE_ALPC_PORT 0x33
 #define THREAD_TOKEN_IMPERSONATE_PRIVILEGES 0xe
 #define IOCTL_DUPE_LEL 0x9211001C
 #define SystemHandleInformation 16

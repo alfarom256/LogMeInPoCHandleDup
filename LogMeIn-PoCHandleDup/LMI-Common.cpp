@@ -88,6 +88,7 @@ HANDLE FindSystemPidFirstToken()
 		if (shtei.UniqueProcessId != 4) {
 			continue;
 		}
+		printf("HANDLE:\n\t Handle Value 0x%x - Type 0x%x - Access 0x%x\n", shtei.HandleValue, shtei.ObjectTypeIndex, shtei.GrantedAccess);
 		if (shtei.ObjectTypeIndex == OBJECT_TYPE_THREAD_TOKEN && shtei.GrantedAccess == THREAD_TOKEN_IMPERSONATE_PRIVILEGES) {
 			printf("Found handle to token:\n\t Handle Value 0x%x - Type 0x%x - Access 0x%x\n", shtei.HandleValue, shtei.ObjectTypeIndex, shtei.GrantedAccess);
 			return (HANDLE)shtei.HandleValue;

